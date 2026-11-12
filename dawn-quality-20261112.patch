@@ -1,0 +1,444 @@
+diff --git a/js/core/guide.js b/js/core/guide.js
+index 51d74ec..2589234 100644
+--- a/js/core/guide.js
++++ b/js/core/guide.js
+@@ -1,4 +1,4 @@
+-/* 平台導引彈窗：首次打開的完整介紹（必須讀完確認才能關閉），
++/* 平台導引彈窗：可略過的首次介紹，
+    之後可從「家」的快捷入口重新打開 */
+ 
+ const GUIDE_PAGES = [
+@@ -8,7 +8,7 @@ const GUIDE_PAGES = [
+       <p>嗨，我是你的<b>靈獸</b>，你的學習陪伴者！</p>
+       <p>這裡跟其他學習 App 不一樣：我不會直接丟答案給你，而是陪你走完一整個學習循環——從好奇，到想通，到真正記住。</p>
+       <p>我住在<b>靈獸頁</b>，去那裡可以跟我聊天、調整我的性格、設定我怎麼叫你（預設就是你的用戶名稱，也可以自訂）。主控台的對話框、圓圈上的靈獸按鈕，都是同一個我。</p>
+-      <p style="color:var(--paper-400);font-size:13px;">花一分鐘，我帶你認識這個地方。請把六頁都讀完，才能開始使用喔。</p>`,
++      <p style="color:var(--paper-400);font-size:13px;">花一分鐘認識這裡，也可以先略過，之後再從系統導引開啟。</p>`,
+   },
+   {
+     title: "認識四個地方",
+@@ -53,11 +53,12 @@ const GUIDE_PAGES = [
+ ];
+ 
+ /**
+- * 顯示平台導引彈窗。必須按下一步讀完四頁，最後按「我了解了」才會關閉。
++ * 顯示平台導引彈窗；可完成導覽，也可略過或按 Escape。
+  * @param {object} opts.onDone - 確認讀完後的回呼
+  */
+ export function showPlatformGuide(opts = {}) {
+   if (document.getElementById("guide-overlay")) return;
++  const previousFocus = document.activeElement;
+   let step = 0;
+   const total = GUIDE_PAGES.length;
+ 
+@@ -65,7 +66,7 @@ export function showPlatformGuide(opts = {}) {
+   overlay.id = "guide-overlay";
+   overlay.style.cssText = "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:oklch(0 0 0 / 0.72);backdrop-filter:blur(4px);padding:16px;";
+   overlay.innerHTML = `
+-    <div id="guide-card" style="width:100%;max-width:520px;max-height:88vh;overflow-y:auto;background:var(--ink-800);border:1px solid oklch(1 0 0 / 0.12);border-radius:16px;padding:28px 24px;box-shadow:0 24px 64px oklch(0 0 0 / 0.5);">
++    <div id="guide-card" role="dialog" aria-modal="true" aria-labelledby="guide-title" tabindex="-1" style="width:100%;max-width:520px;max-height:88vh;overflow-y:auto;background:var(--ink-800);border:1px solid oklch(1 0 0 / 0.12);border-radius:16px;padding:28px 24px;box-shadow:0 24px 64px oklch(0 0 0 / 0.5);">
+       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+         <img src="../assets/icons/nav-pet.webp" alt="靈獸" style="width:48px;height:48px;border-radius:50%;object-fit:cover;">
+         <div>
+@@ -77,11 +78,32 @@ export function showPlatformGuide(opts = {}) {
+       <div id="guide-body" style="font-size:14px;line-height:1.9;color:var(--paper-200);"></div>
+       <div style="display:flex;gap:8px;justify-content:space-between;margin-top:24px;">
+         <button id="guide-prev" class="btn btn-ghost">上一步</button>
++        <button id="guide-skip" class="btn btn-ghost">先略過</button>
+         <button id="guide-next" class="btn btn-primary">下一步</button>
+       </div>
+-      <div id="guide-hint" style="text-align:center;font-size:11px;color:var(--paper-400);margin-top:12px;">第 1 頁，共 5 頁</div>
++      <div id="guide-hint" role="status" aria-live="polite" style="text-align:center;font-size:11px;color:var(--paper-400);margin-top:12px;"></div>
+     </div>`;
+   document.body.appendChild(overlay);
++  const close = skipped => {
++    overlay.remove();
++    document.removeEventListener("keydown", onKey, true);
++    if (previousFocus && previousFocus.isConnected) previousFocus.focus();
++    try { opts.onDone && opts.onDone({ skipped }); } catch {}
++  };
++  const onKey = e => {
++    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); return; }
++    if (e.key !== "Tab") return;
++    const buttons = [...overlay.querySelectorAll('button, input, [href], [tabindex="0"]')]
++      .filter(el => !el.disabled && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
++    const first = buttons[0], last = buttons[buttons.length - 1];
++    if (!first) { e.preventDefault(); return; }
++    if (e.shiftKey && (document.activeElement === first || !buttons.includes(document.activeElement))) {
++      e.preventDefault(); last.focus();
++    } else if (!e.shiftKey && (document.activeElement === last || !buttons.includes(document.activeElement))) {
++      e.preventDefault(); first.focus();
++    }
++  };
++  document.addEventListener("keydown", onKey, true);
+ 
+   const render = () => {
+     const p = GUIDE_PAGES[step];
+@@ -95,6 +117,7 @@ export function showPlatformGuide(opts = {}) {
+     document.getElementById("guide-hint").textContent =
+       step === total - 1 ? "讀完請按「我了解了」" : `第 ${step + 1} 頁，共 ${total} 頁`;
+     document.getElementById("guide-card").scrollTop = 0;
++    document.getElementById("guide-card").focus();
+     /* 選用功能頁的 checkbox 連動 localStorage */
+     const crBox = document.getElementById("guide-classroom");
+     if (crBox) {
+@@ -108,19 +131,19 @@ export function showPlatformGuide(opts = {}) {
+   document.getElementById("guide-prev").onclick = () => {
+     if (step > 0) { step--; render(); }
+   };
++  document.getElementById("guide-skip").onclick = () => close(true);
+   document.getElementById("guide-next").onclick = () => {
+     if (step < total - 1) { step++; render(); }
+     else {
+-      overlay.remove();
+-      try { opts.onDone && opts.onDone(); } catch {}
++      close(false);
+     }
+   };
+-  /* 點背景不關閉：必須讀完確認才能放行 */
++  /* Background clicks keep the guide open; explicit skip and Escape are available. */
+   overlay.addEventListener("click", e => {
+     if (e.target === overlay) {
+       const card = document.getElementById("guide-card");
+       card.style.transform = "translateX(0)";
+-      card.animate(
++      if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches && card.animate) card.animate(
+         [{ transform: "translateX(0)" }, { transform: "translateX(-8px)" }, { transform: "translateX(8px)" }, { transform: "translateX(0)" }],
+         { duration: 220 }
+       );
+diff --git a/js/core/island-quality.js b/js/core/island-quality.js
+new file mode 100644
+index 0000000..9005a81
+--- /dev/null
++++ b/js/core/island-quality.js
+@@ -0,0 +1,37 @@
++/* Pure helpers shared by the island and the offline review scene. */
++(function (root, factory) {
++  var api = factory();
++  if (typeof module === 'object' && module.exports) module.exports = api;
++  else root.DawnIslandQuality = api;
++})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
++  'use strict';
++  function advancePhase(phase, distance, stride) {
++    if (!Number.isFinite(phase)) phase = 0;
++    if (!Number.isFinite(distance) || distance < 0 || !(stride > 0)) return phase;
++    return (phase + distance / (stride * 2) * Math.PI * 2) % (Math.PI * 2);
++  }
++  function damp(current, target, rate, dt) {
++    return current + (target - current) * (1 - Math.exp(-rate * Math.max(0, dt)));
++  }
++  function grassHeight(x, z, height) {
++    // Shorter grass near paths makes feet and ground readable; distant tufts stay varied.
++    var path = Math.min(Math.abs(x), Math.abs(z));
++    return height * (.55 + .28 * Math.min(1, path / 3));
++  }
++  function stoneGeometry(THREE, radius, seed) {
++    var geo = new THREE.IcosahedronGeometry(radius, 2);
++    var p = geo.attributes.position, colors = [];
++    for (var i = 0; i < p.count; i++) {
++      var x = p.getX(i) / radius, y = p.getY(i) / radius, z = p.getZ(i) / radius;
++      // Coordinate-based deformation keeps coincident vertices together (no split seams).
++      var bulge = 1 + .12 * Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 - seed);
++      p.setXYZ(i, x * radius * bulge, y * radius * (.90 + .07 * Math.cos(z * 3 + seed)), z * radius * bulge);
++      var light = Math.max(0, Math.min(1, (y + 1) / 2));
++      colors.push(.65 + .35 * light, .72 + .28 * light, .77 + .23 * light);
++    }
++    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
++    geo.computeVertexNormals(); geo.computeBoundingSphere();
++    return geo;
++  }
++  return {advancePhase: advancePhase, damp: damp, grassHeight: grassHeight, stoneGeometry: stoneGeometry};
++});
+diff --git a/js/core/learn-history.js b/js/core/learn-history.js
+index cb99946..24da31e 100644
+--- a/js/core/learn-history.js
++++ b/js/core/learn-history.js
+@@ -75,8 +75,20 @@ export function renderHistoryList(items, emptyTextOrOpts) {
+     if (emptyTextOrOpts.emptyText) emptyText = emptyTextOrOpts.emptyText;
+     if (emptyTextOrOpts.groupBy) groupBy = emptyTextOrOpts.groupBy;
+   }
+-  if (!items.length) return `<p style="color:var(--paper-400);font-size:13px;">${emptyText}</p>`;
++  const escEmpty = String(emptyText).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
++  if (!Array.isArray(items)) items = [];
++  items = items.filter(it => it && typeof it === "object");
++  if (!items.length) return `<p style="color:var(--paper-400);font-size:13px;">${escEmpty}</p>`;
+   const escH = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
++  const historyLink = value => {
++    try {
++      if (typeof value !== 'string' || /[\u0000-\u0020\u007f]/.test(value)) return '';
++      const base = typeof location !== 'undefined' ? location.href : 'https://edu.crestylon.org/pages/';
++      const url = new URL(value, base);
++      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return '';
++      return '<a href="' + escH(url.href) + '" style="font-size:11px;color:var(--brass-300);white-space:nowrap;">查看</a>';
++    } catch { return ''; }
++  };
+   // 簡易 markdown：先 esc 再轉 **粗體**（歷史紀錄的 detail 常含 AI 生成的 markdown）
+   const mdH = s => escH(s).replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>");
+   const fmtDate = iso => {
+@@ -89,7 +101,7 @@ export function renderHistoryList(items, emptyTextOrOpts) {
+ 
+   if (groupBy === "date") {
+     // 按日期分組
+-    const groups = {};
++    const groups = Object.create(null);
+     items.forEach(it => {
+       const d = fmtDate(it.created_at);
+       if (!groups[d]) groups[d] = [];
+@@ -102,7 +114,7 @@ export function renderHistoryList(items, emptyTextOrOpts) {
+           <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px;">
+             ${badge(it.type)}
+             <span style="font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escH(it.topic || it.detail || "學習活動")}</span>
+-            ${it.link ? `<a href="${escH(it.link)}" style="font-size:11px;color:var(--brass-300);white-space:nowrap;">查看</a>` : ""}
++            ${historyLink(it.link)}
+           </div>
+         `).join("")}
+       </div>
+@@ -110,7 +122,7 @@ export function renderHistoryList(items, emptyTextOrOpts) {
+   }
+ 
+   // 按主題分組：同一個主題的各種學習整理在一起
+-  const groups = {};
++  const groups = Object.create(null);
+   const order = [];
+   items.forEach(it => {
+     const key = (it.topic || "").trim() || `（${it.type}）`;
+@@ -125,7 +137,7 @@ export function renderHistoryList(items, emptyTextOrOpts) {
+           ${badge(it.type)}
+           <span style="font-size:11px;color:var(--paper-400);white-space:nowrap;">${escH(fmtDate(it.created_at))}</span>
+           <span style="font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${mdH(it.detail || "學習活動")}</span>
+-          ${it.link ? `<a href="${escH(it.link)}" style="font-size:11px;color:var(--brass-300);white-space:nowrap;">查看</a>` : ""}
++          ${historyLink(it.link)}
+         </div>
+       `).join("")}
+     </div>
+diff --git a/js/core/progress.js b/js/core/progress.js
+index e24cc42..ee429e2 100644
+--- a/js/core/progress.js
++++ b/js/core/progress.js
+@@ -27,8 +27,8 @@
+   }
+ 
+   function writeRaw(key, obj) {
+-    try { localStorage.setItem(PREFIX + key, JSON.stringify(obj)); }
+-    catch (e) { /* 空間不足等一律吞掉，不弄壞頁面 */ }
++    try { localStorage.setItem(PREFIX + key, JSON.stringify(obj)); return true; }
++    catch (e) { return false; /* Let callers distinguish a failed save. */ }
+   }
+ 
+   async function pullFromCloud(client, userId, key) {
+@@ -44,7 +44,7 @@
+   window.DawnProgress = {
+     /* 本地存檔：值 {v:1, updatedAt: ISO字串, data} */
+     save: function (key, data) {
+-      writeRaw(key, { v: 1, updatedAt: nowISO(), data: data });
++      return writeRaw(key, { v: 1, updatedAt: nowISO(), data: data });
+     },
+     /* 回 {data, updatedAt} 或 null */
+     load: function (key) {
+@@ -62,7 +62,7 @@
+         var local = readRaw(key);
+         if (!local) return false;
+         var res = await client.from("user_progress").upsert({
+-          user_id: userId, key: key, data: local.data || {},
++          user_id: userId, key: key, data: local.data === undefined ? {} : local.data,
+           updated_at: local.updatedAt || nowISO(),
+         }, { onConflict: "user_id,key" });
+         return !res.error;
+@@ -79,8 +79,10 @@
+         var local = readRaw(key);
+         var cloudT = row.updated_at || "";
+         var localT = (local && local.updatedAt) || "";
+-        if (local && localT && cloudT && cloudT <= localT) return null;
+-        writeRaw(key, { v: 1, updatedAt: cloudT || nowISO(), data: row.data });
++        var cloudMs = Date.parse(cloudT), localMs = Date.parse(localT);
++        if (!Number.isFinite(cloudMs)) return null;
++        if (local && Number.isFinite(localMs) && cloudMs <= localMs) return null;
++        if (!writeRaw(key, { v: 1, updatedAt: cloudT, data: row.data })) return null;
+         return row.data;
+       } catch (e) { return null; }
+     },
+diff --git a/pages/island-survival.html b/pages/island-survival.html
+index 0aed314..72d7e2f 100644
+--- a/pages/island-survival.html
++++ b/pages/island-survival.html
+@@ -1681,6 +1681,7 @@ body.touch #navDiscWrap{right:calc(8px + env(safe-area-inset-right))}
+     body.touch #prompt{bottom:calc(84px + env(safe-area-inset-bottom))}
+   }
+ </style>
++<script src="../js/core/island-quality.js?v=quality-20261112"></script>
+ </head>
+ <body>
+ <div id="island-loading" style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#040810;color:#faf6ef;font-family:inherit;">
+@@ -2104,6 +2105,7 @@ var PHASES = [
+ ];
+ 
+ /* ---------------- three setup ---------------- */
++var IQ = window.DawnIslandQuality;
+ var canvas = $('scene');
+ var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true});
+ /* MOB: 手機效能 — 觸控/小螢幕起始 pixelRatio 上限 1.5（桌機維持 2），FPS 自適應階梯：
+@@ -3239,7 +3241,7 @@ function tree(x,z,parent,s,type){
+ function rock(x,z,parent,s){
+   s = s||1;
+   var g = new THREE.Group(); g.position.set(x, GROUND_Y, z); parent.add(g);
+-  var m = new THREE.Mesh(puffGeo(new THREE.SphereGeometry(.78*s, 22, 18), .15, x*1.3 + z*2.1), mat(0x9aa3a8, {map: STONE_TEX}));
++  var m = new THREE.Mesh(IQ.stoneGeometry(THREE, .78*s, x*1.3 + z*2.1), mat(0x9aa3a8, {map: STONE_TEX, vertexColors:true}));
+   m.position.y = .34*s; m.scale.set(1.15,.68,.92); m.rotation.y = Math.random()*3;
+   m.castShadow = true; m.receiveShadow = true; g.add(m);
+   blobShadow(g, 0, .05, 0, 1.15*s, .3);
+@@ -4691,7 +4693,7 @@ function grassSea(cx, cz, R, count, parent, plazaSpec){
+     var sc = .8 + Math.random()*.55;
+     dummy.position.set(x, GROUND_Y + .02 + groundH(x, z), z);
+     dummy.rotation.set((Math.random()-.5)*.16, Math.random()*3.14, (Math.random()-.5)*.16);
+-    dummy.scale.set(sc, (.62 + Math.random()*.55) * (.78 + gp * .55), sc);
++    dummy.scale.set(sc, IQ.grassHeight(x, z, (.62 + Math.random()*.55) * (.78 + gp * .55)), sc);
+     dummy.updateMatrix();
+     inst.setMatrixAt(placed, dummy.matrix);
+     cInst.setHex(palette[(Math.random()*palette.length)|0]).offsetHSL(0, 0, (Math.random()-.5)*.06);
+@@ -5948,7 +5950,8 @@ function blCharTick(rawDt, t){
+   BL.avatar.scale.copy(tpAvatar.scale);
+   var P = BL.piv; if (!P.hips) return;
+   var spd = Math.hypot(player.vx, player.vz);
+-  var mv = player.moving, ph = player.stepPhase, sw = Math.sin(ph);
++  BL.moveBlend = IQ.damp(BL.moveBlend || 0, player.moving, 12, rawDt);
++  var mv = BL.moveBlend, ph = player.stepPhase, sw = Math.sin(ph);
+   function shapeSwing(x){ return Math.sign(x) * Math.pow(Math.abs(x), .78); }
+   var legSwing = shapeSwing(sw);
+   function kneeFor(p){ var sx = Math.sin(p - .65); return (sx > 0 ? sx * sx : 0) * 1.05; }
+@@ -5980,11 +5983,15 @@ function blCharTick(rawDt, t){
+   var lag = animate._sprHair ? animate._sprHair.x : 0;
+   if (P.hairFront) P.hairFront.rotation.x = lag * .3 - player.vy * .01;
+   if (P.hairBack) P.hairBack.rotation.x = lag * .45 - player.vy * .015;
+-  if (!player.grounded){
+-    if (P.thighL){ P.thighL.rotation.x = -.5; P.thighR.rotation.x = .35; }
+-    if (P.shoulderL){ P.shoulderL.rotation.x = -.7; P.shoulderR.rotation.x = -.7; }
+-    if (P.shinL){ P.shinL.rotation.x = .55; P.shinR.rotation.x = .9; }
+-    if (P.elbowL){ P.elbowL.rotation.x = -.7; P.elbowR.rotation.x = -.7; }
++  /* MOTION02: smooth airborne entry/exit; swimming owns its own full-body pose below. */
++  var _airWant = !player.grounded && !POSE.mode && !(typeof SWIM !== 'undefined' && SWIM && SWIM.on) ? 1 : 0;
++  BL.airK = (BL.airK || 0) + (_airWant - (BL.airK || 0)) * (1 - Math.exp(-12 * Math.min(rawDt, .05)));
++  if (BL.airK > .001){
++    var _airMix = function(cur, target){ return cur + (target - cur) * BL.airK; };
++    if (P.thighL){ P.thighL.rotation.x = _airMix(P.thighL.rotation.x, -.5); P.thighR.rotation.x = _airMix(P.thighR.rotation.x, .35); }
++    if (P.shoulderL){ P.shoulderL.rotation.x = _airMix(P.shoulderL.rotation.x, -.7); P.shoulderR.rotation.x = _airMix(P.shoulderR.rotation.x, -.7); }
++    if (P.shinL){ P.shinL.rotation.x = _airMix(P.shinL.rotation.x, .55); P.shinR.rotation.x = _airMix(P.shinR.rotation.x, .9); }
++    if (P.elbowL){ P.elbowL.rotation.x = _airMix(P.elbowL.rotation.x, -.7); P.elbowR.rotation.x = _airMix(P.elbowR.rotation.x, -.7); }
+   }
+   /* BLOCKANIM（2026-11-10 案 1）: BL 隔擋姿勢——D1FIX 當年註解稱「BL/CW 複製 TR 沿用」並不成立（blCharTick 自算
+      樞軸、從不讀 TR 姿勢），故玩家的 BL/CW 替身從未顯示過隔擋姿勢。本段在 BL 自有 gait/空中覆寫之後、
+@@ -15393,6 +15400,15 @@ applyPhase(); renderIslandsBar(); syncPetBar();
+ 
+ /* ---------------- main loop ---------------- */
+ var clock = new THREE.Clock();
++var qualityHidden = document.hidden, qualityResume = false, qualityTime = 0;
++function qualityReleaseInput(){
++  Object.keys(keys).forEach(function(k){ keys[k] = false; });
++  joyVec.x = 0; joyVec.y = 0; lookPend.x = 0; lookPend.y = 0;
++}
++window.addEventListener('blur', qualityReleaseInput);
++document.addEventListener('visibilitychange', function(){
++  qualityHidden = document.hidden; qualityResume = true; qualityReleaseInput();
++});
+ var overviewCam = 0;
+ var fpsAcc = { frames:0, time:0, fps:60, low:0 };
+ var petTarget = new THREE.Vector3();
+@@ -15649,11 +15665,19 @@ function headSepHeadTick(){
+ }
+ function animate(){
+   requestAnimationFrame(animate);
++  if (qualityHidden) return;
++  if (qualityResume){
++    clock.getDelta(); qualityResume = false;
++    fpsAcc.frames = 0; fpsAcc.time = 0; fpsAcc.low = 0;
++    fpsAcc._lastMs = 0; fpsAcc._realAcc = 0; fpsAcc._realN = 0;
++  }
+   perfMergeSweep(false);   /* PERFMERGE: 主島一次性合併 sweep（done 後每幀僅旗標檢查；分類島在 layout 內各自合併） */
+-  var rawDt = Math.min(clock.getDelta(), .05);
++  var frameDt = clock.getDelta();
++  var rawDt = Math.min(frameDt, .05);
++  qualityTime += rawDt;
+   if (slowTimer > 0) slowTimer -= rawDt;
+   var dt = rawDt * (slowTimer > 0 ? .85 : 1);
+-  var t = clock.elapsedTime;
++  var t = qualityTime;
+ 
+   /* MOB: 觸控環視平滑 — 緩衝量逐幀指數衰減套用（觸控靈敏度 .0039，低於滑鼠 .0052） */
+   if (lookPend.x || lookPend.y){
+@@ -15781,9 +15805,11 @@ function animate(){
+         if (Math.hypot(tRes[0]-cxp, tRes[1]-czp) < .02){ player.x = tRes[0]; player.z = tRes[1]; burst(player.x, (S.inside ? GROUND_Y : GROUND_Y + groundH(player.x, player.z)) + .15, player.z, 0xd9c9a8, 3, .8, .5); break; }
+       }
+     }
+-    player.distAcc = (player.distAcc || 0) + spdNow * rawDt;
++    /* MOTION02: incremental resolved-distance phase; changing stride must not rescale history. */
++    var _gaitDist = isFinite(movedNow) && movedNow <= Math.max(1, spdNow * rawDt * 3) ? movedNow : 0;
++    player.distAcc = (player.distAcc || 0) + _gaitDist;
+     player.strideLen = .72 + Math.min(1.6, spdNow / 6) * .38;
+-    player.stepPhase = player.distAcc / (player.strideLen * 2) * Math.PI * 2;
++    player.stepPhase = IQ.advancePhase(player.stepPhase || 0, _gaitDist, player.strideLen);
+     if (((turnIn || player._adTurn) && Math.abs(fwd) < .1 || (typeof TURN !== 'undefined' && TURN && TURN.active)) && player.grounded && !POSE.lock){ player.stepPhase += rawDt * 3.4; player.moving = Math.max(player.moving, .3); }   /* S7b-乙: 原地轉向小步踏（相位小幅前進、腿部跟著踏，不滑步）／ ADSEM: A/D 原地轉身同吃本段踏步 ／ TURNSTEP: 段落轉身動畫期間同吃踏步（S 轉身時 fwd=-1 不滿足 |fwd|<.1，故 TURN.active 獨立放行） */
+     /* L: each footfall kicks up a tiny dust mote (the grass itself already parts via GRASS_PUSH) */
+     var stepSign = Math.sin(player.stepPhase) >= 0 ? 1 : -1;
+@@ -16490,7 +16516,7 @@ function animate(){
+   }
+   /* FPS auto-degrade chain (§8) */
+   (function(){
+-    fpsAcc.frames++; fpsAcc.time += rawDt;
++    fpsAcc.frames++; fpsAcc.time += frameDt;
+     if (fpsAcc.time >= 1){ fpsAcc.fps = fpsAcc.frames / fpsAcc.time; fpsAcc.frames = 0; fpsAcc.time = 0;
+       if (window.__MOBILE_PERF__) window.__MOBILE_PERF__.sample(fpsAcc.fps);   /* MOB: 手機 FPS 階梯餵入 */
+       if (S.settings.quality === 'auto' && fpsAcc.fps < 24 && fpsAcc.fps > 0) fpsAcc.low += 1; else fpsAcc.low = 0;
+@@ -17278,10 +17304,16 @@ function poseBlTick(t, P){
+   if (!POSE.mode && (typeof SWIM === 'undefined' || !SWIM || !(SWIM.poseK > .01))) return;
+   if (!POSE.mode) {   /* SWIMPOSE: BL 素體游泳——root 傾倒由 blCharTick 複製 tpAvatar 自動繼承，此處只補肩膀交替划水（與 TR 同節奏 t×3.4） */
+     var sk = SWIM.poseK, spad = Math.sin(t * 3.4), spad2 = Math.sin(t * 3.4 + Math.PI);
+-    if (P.shoulderL) P.shoulderL.rotation.x = (-1.5 + spad * 1.2) * sk;
+-    if (P.shoulderR) P.shoulderR.rotation.x = (-1.5 + spad2 * 1.2) * sk;
+-    if (P.elbowL) P.elbowL.rotation.x = (-.55 + Math.max(0, -spad) * .5) * sk;
+-    if (P.elbowR) P.elbowR.rotation.x = (-.55 + Math.max(0, -spad2) * .5) * sk;
++    /* MOTION02: blend from the current gait, then animate legs too; CW inherits these pivots. */
++    var swimMix = function(cur, target){ return cur + (target - cur) * sk; };
++    if (P.shoulderL) P.shoulderL.rotation.x = swimMix(P.shoulderL.rotation.x, -1.5 + spad * 1.2);
++    if (P.shoulderR) P.shoulderR.rotation.x = swimMix(P.shoulderR.rotation.x, -1.5 + spad2 * 1.2);
++    if (P.elbowL) P.elbowL.rotation.x = swimMix(P.elbowL.rotation.x, -.55 + Math.max(0, -spad) * .5);
++    if (P.elbowR) P.elbowR.rotation.x = swimMix(P.elbowR.rotation.x, -.55 + Math.max(0, -spad2) * .5);
++    if (P.thighL) P.thighL.rotation.x = swimMix(P.thighL.rotation.x, spad * .38);
++    if (P.thighR) P.thighR.rotation.x = swimMix(P.thighR.rotation.x, spad2 * .38);
++    if (P.shinL) P.shinL.rotation.x = swimMix(P.shinL.rotation.x, .25 + Math.max(0, spad2) * .3);
++    if (P.shinR) P.shinR.rotation.x = swimMix(P.shinR.rotation.x, .25 + Math.max(0, spad) * .3);
+     return;
+   }
+   var k = POSE.k || 0;
+@@ -17441,19 +17473,32 @@ function tabShowHome(){
+   try { tabHintMaybeShow(document.querySelectorAll('#tabGrid .tab-page').length); } catch (e) {}   /* TABHOME（J+）: 翻頁提示改在「打開平板」時起算，未看過才顯示 */
+   $('tabWin').hidden = true; $('tabHome').hidden = false;
+ }
++function tabSyncFrameTitle(fr){
++  try {
++    var doc = fr.contentDocument;
++    if (!doc || !doc.title || doc.location.href === 'about:blank') return;
++    fr.title = doc.title.split('—')[0].trim();
++    if (fr.style.display !== 'none') $('tabWinTitle').textContent = fr.title;
++  } catch (e) { /* Cross-origin pages retain the explicit launch title. */ }
++}
+ function tabOpenPage(url, title){
+   var base = url.split('?')[0];
+   var fr = TAB.frames[base];
+   if (!fr){
+     fr = document.createElement('iframe');
+     fr.title = title || '';
++    fr.addEventListener('load', function(){ tabSyncFrameTitle(fr); });
+     $('tabWinBody').appendChild(fr);
+     TAB.frames[base] = fr;
+   }
+-  if (fr.getAttribute('src') !== url) fr.setAttribute('src', url);
++  var actualUrl = '';
++  try { actualUrl = fr.contentWindow.location.href; } catch (e) {}
++  var wantedUrl = new URL(url, document.baseURI).href;
++  if (fr.getAttribute('src') !== url || (actualUrl && actualUrl !== 'about:blank' && actualUrl !== wantedUrl)) fr.setAttribute('src', url);
+   for (var k in TAB.frames) TAB.frames[k].style.display = (TAB.frames[k] === fr) ? 'block' : 'none';
+   frameScrollTop(fr);   /* MOB3: 平板 app 頁顯示時捲回頂部（主控台 hero 不再被上次捲動位置切掉） */
+   $('tabWinTitle').textContent = title || '';
++  if (actualUrl === wantedUrl) tabSyncFrameTitle(fr);
+   $('tabHome').hidden = true; $('tabWin').hidden = false;
+   uiPush('tabpage', function(){ return TAB.open && !$('tabWin').hidden; }, function(){ tabShowHome(); });   /* ESC19: 平板子頁一層 */
+ }
